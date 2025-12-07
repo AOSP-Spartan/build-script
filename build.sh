@@ -13,11 +13,11 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-ROM_NAME="AxionAOSP"
+ROM_NAME="PixelOS"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="$HOME/axion"
-MANIFEST_URL="https://github.com/AxionAOSP/android.git"
-MANIFEST_BRANCH="lineage-23.0"
+BUILD_DIR="$HOME/pos"
+MANIFEST_URL="https://github.com/PixelOS-AOSP/android_manifest.git"
+MANIFEST_BRANCH="sixteen-qpr1"
 SYNC_JOBS="24"
 
 # Device configuration file (will be loaded from JSON)
@@ -25,9 +25,8 @@ DEVICE_CONFIG_FILE=""
 DEVICE=""
 
 # Build configuration - will be overridden by JSON or command line args
-BUILD_VARIANT="userdebug"
-GMS_VARIANT="vanilla"
-BUILD_TYPE="-b"
+BUILD_VARIANT="user"
+TARGET_RELEASE="bp3a"  # Android target release (e.g., bp3a for Android 16 QPR1)
 
 # Function to print colored output
 print_status() {
@@ -78,13 +77,10 @@ load_device_config() {
 
     # Override build config from JSON if not set by command line
     if [ -z "$BUILD_VARIANT_OVERRIDE" ]; then
-        BUILD_VARIANT=$(jq -r '.build.variant // "userdebug"' "$config_file")
+        BUILD_VARIANT=$(jq -r '.build.variant // "user"' "$config_file")
     fi
-    if [ -z "$GMS_VARIANT_OVERRIDE" ]; then
-        GMS_VARIANT=$(jq -r '.build.gms_variant // "vanilla"' "$config_file")
-    fi
-    if [ -z "$BUILD_TYPE_OVERRIDE" ]; then
-        BUILD_TYPE=$(jq -r '.build.build_type // "-b"' "$config_file")
+    if [ -z "$TARGET_RELEASE_OVERRIDE" ]; then
+        TARGET_RELEASE=$(jq -r '.build.target_release // "bp3a"' "$config_file")
     fi
 
     print_success "Device configuration loaded: $DEVICE ($DEVICE_FULL_NAME)"
@@ -225,21 +221,14 @@ build_rom() {
     # Source build environment
     print_status "Sourcing build environment..."
     source build/envsetup.sh
-    
-    # Setup device configuration
-    print_status "Setting up device configuration with AxionAOSP..."
-    if [ "$GMS_VARIANT" = "vanilla" ]; then
-        axion "$DEVICE" "$BUILD_VARIANT" vanilla
-    elif [ "$GMS_VARIANT" = "gms core" ]; then
-        axion "$DEVICE" "$BUILD_VARIANT" gms core
-    elif [ "$GMS_VARIANT" = "gms pico" ]; then
-        axion "$DEVICE" "$BUILD_VARIANT" gms pico
-    else
-        axion "$DEVICE" "$BUILD_VARIANT" "$GMS_VARIANT"
-    fi
-    
+
+    # Setup device configuration with lunch
+    LUNCH_TARGET="custom_${DEVICE}-${TARGET_RELEASE}-${BUILD_VARIANT}"
+    print_status "Running lunch ${LUNCH_TARGET}..."
+    lunch "$LUNCH_TARGET"
+
     if [ $? -ne 0 ]; then
-        print_error "Failed to setup device configuration"
+        print_error "Failed to run lunch command"
         exit 1
     fi
     
@@ -252,16 +241,16 @@ build_rom() {
     # Get number of CPU cores for parallel compilation
     CORES=$(nproc)
     print_status "Starting build with $CORES parallel jobs..."
-    
-    # Start the build using AxionAOSP build system
+
+    # Start the build using PixelOS build system
     print_status "Building ROM (this will take several hours)..."
-    ax "$BUILD_TYPE" -j"$CORES" "$BUILD_VARIANT"
+    mka pixelos -j"$CORES"
     
     if [ $? -eq 0 ]; then
         print_success "ROM build completed successfully!"
-        
+
         # Find the output file
-        OUTPUT_FILE=$(find "$BUILD_DIR/out/target/product/$DEVICE" -maxdepth 1 -name "*axion*.zip" | head -1)
+        OUTPUT_FILE=$(find "$BUILD_DIR/out/target/product/$DEVICE" -maxdepth 1 -name "*PixelOS*.zip" -o -name "*pixelos*.zip" | head -1)
         if [ -n "$OUTPUT_FILE" ]; then
             print_success "ROM file created: $OUTPUT_FILE"
             ls -lh "$OUTPUT_FILE"
@@ -340,24 +329,6 @@ main() {
                 SKIP_CLONE=true
                 shift
                 ;;
-            --gms)
-                GMS_VARIANT_OVERRIDE=true
-                case $2 in
-                    pico|core)
-                        GMS_VARIANT="gms $2"
-                        shift 2
-                        ;;
-                    *)
-                        GMS_VARIANT="gms core"
-                        shift
-                        ;;
-                esac
-                ;;
-            --vanilla)
-                GMS_VARIANT_OVERRIDE=true
-                GMS_VARIANT="vanilla"
-                shift
-                ;;
             --variant)
                 BUILD_VARIANT_OVERRIDE=true
                 case $2 in
@@ -371,26 +342,10 @@ main() {
                         ;;
                 esac
                 ;;
-            --build-type)
-                BUILD_TYPE_OVERRIDE=true
-                case $2 in
-                    bacon|-b)
-                        BUILD_TYPE="-b"
-                        shift 2
-                        ;;
-                    fastboot|-fb)
-                        BUILD_TYPE="-fb"
-                        shift 2
-                        ;;
-                    brunch|-br)
-                        BUILD_TYPE="-br"
-                        shift 2
-                        ;;
-                    *)
-                        print_error "Invalid build type: $2. Use bacon, fastboot, or brunch"
-                        exit 1
-                        ;;
-                esac
+            --target-release)
+                TARGET_RELEASE_OVERRIDE=true
+                TARGET_RELEASE="$2"
+                shift 2
                 ;;
             --help|-h)
                 echo "Usage: $0 --device <device> [OPTIONS]"
@@ -404,20 +359,18 @@ main() {
                 echo "  --clean               Clean build directory before building"
                 echo "  --clean-repos         Clean and re-clone device repositories"
                 echo "  --skip-clone          Skip cloning device repositories"
-                echo "  --gms [pico|core]     Build with GMS (default: core)"
-                echo "  --vanilla             Build vanilla (no GMS)"
-                echo "  --variant <variant>   Build variant: user, userdebug, eng"
-                echo "  --build-type <type>   Build type: bacon, fastboot, brunch"
+                echo "  --variant <variant>   Build variant: user, userdebug, eng (default: user)"
+                echo "  --target-release <id> Android target release (e.g., bp3a for Android 16 QPR1)"
                 echo "  --help, -h            Show this help message"
                 echo
                 echo "Available devices:"
                 ls -1 "$SCRIPT_DIR/devices/"*.json 2>/dev/null | xargs -n1 basename | sed 's/.json$//' | sed 's/^/  /' || echo "  No devices configured"
                 echo
                 echo "Examples:"
-                echo "  $0 --device <device_name>              # Build for device"
-                echo "  $0 -d <device_name> --gms core         # GMS core build"
-                echo "  $0 -d <device_name> --variant user     # User variant build"
-                echo "  $0 -d /path/to/custom.json             # Build with custom config"
+                echo "  $0 --device <device_name>                      # Build for device"
+                echo "  $0 -d <device_name> --variant user             # User variant build"
+                echo "  $0 -d <device_name> --target-release bp3a      # Specify target release"
+                echo "  $0 -d /path/to/custom.json                     # Build with custom config"
                 exit 0
                 ;;
             *)
@@ -451,8 +404,8 @@ main() {
     echo "  Manifest Branch: $MANIFEST_BRANCH"
     echo "  Sync Jobs: $SYNC_JOBS"
     echo "  Build Variant: $BUILD_VARIANT"
-    echo "  GMS Variant: $GMS_VARIANT"
-    echo "  Build Type: $BUILD_TYPE"
+    echo "  Target Release: $TARGET_RELEASE"
+    echo "  Lunch Target: custom_${DEVICE}-${TARGET_RELEASE}-${BUILD_VARIANT}"
     echo "  Skip Sync: $SKIP_SYNC"
     echo "  Clean First: $CLEAN_FIRST"
     echo "  Clean Repos: $CLEAN_REPOS"

@@ -1,12 +1,12 @@
-# AxionAOSP ROM Build Script
+# PixelOS ROM Build Script
 
-Automated build script for AxionAOSP custom ROM with multi-device support via JSON configurations.
+Automated build script for PixelOS custom ROM with multi-device support via JSON configurations.
 
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/SM8250-Common/build-script_axion.git build-axion && cd build-axion && chmod +x build.sh
-./build.sh --device spartan --gms core
+git clone https://github.com/AOSP-Spartan/build-script.git build-pixelos && cd build-pixelos && chmod +x build.sh
+./build.sh --device spartan
 ```
 
 ## 📋 Prerequisites
@@ -27,9 +27,9 @@ sudo apt update && sudo apt install git-core gnupg flex bison build-essential zi
 
 ### Basic Commands
 ```bash
-./build.sh -d spartan --gms core              # First build
-./build.sh -d spartan --skip-sync --gms core  # Quick rebuild
-./build.sh --help                             # Show all options
+./build.sh -d spartan                    # First build
+./build.sh -d spartan --skip-sync        # Quick rebuild
+./build.sh --help                        # Show all options
 ```
 
 ### Build Options
@@ -37,10 +37,8 @@ sudo apt update && sudo apt install git-core gnupg flex bison build-essential zi
 | Option | Description |
 |--------|-------------|
 | `--device, -d <name>` | Device to build (required) |
-| `--gms [pico\|core]` | Include Google services |
-| `--vanilla` | No Google services (default) |
-| `--variant <type>` | user/userdebug/eng |
-| `--build-type <type>` | bacon/fastboot/brunch |
+| `--variant <type>` | user/userdebug/eng (default: user) |
+| `--target-release <id>` | Android target release (e.g., bp3a for Android 16 QPR1) |
 | `--skip-sync` | Skip source download |
 | `--skip-clone` | Skip device repo cloning |
 | `--clean` | Clean build environment |
@@ -49,15 +47,21 @@ sudo apt update && sudo apt install git-core gnupg flex bison build-essential zi
 ### Common Workflows
 ```bash
 # First build
-./build.sh -d spartan --gms core
+./build.sh -d spartan
 
 # Daily development
-./build.sh -d spartan --skip-sync --gms core
+./build.sh -d spartan --skip-sync
 
 # Production release
-./build.sh -d spartan --variant user --gms core --clean-repos
+./build.sh -d spartan --variant user --clean-repos
 
-# Quick test
+# Custom target release
+./build.sh -d spartan --target-release bp3a
+
+# Userdebug build for testing
+./build.sh -d spartan --variant userdebug --skip-sync
+
+# Quick test (skip sync and clone)
 ./build.sh -d spartan --skip-sync --skip-clone
 ```
 
@@ -72,6 +76,7 @@ Device configs are stored in `devices/*.json`. Each JSON defines repositories, b
 
 **Included Devices:**
 - `spartan` - Realme GT Neo 3T
+- `bitra` - Realme GT 5G
 
 ---
 
