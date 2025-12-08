@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 ROM_NAME="PixelOS"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$HOME/pos"
-MANIFEST_URL="https://github.com/AOSP-Spartan/android_manifest.git"
+MANIFEST_URL="https://github.com/PixelOS-AOSP/android_manifest.git"
 MANIFEST_BRANCH="sixteen-qpr1"
 SYNC_JOBS="24"
 
