@@ -290,8 +290,9 @@ class ProgressMonitor:
             # Search from end to start
             for line in reversed(lines):
                 if self.status == "Compiling":
-                    # Match: [63% 53/83]
-                    match = re.search(r'\[\s*(\d+)%\s+(\d+)/(\d+)\]', line)
+                    # Match ninja format: [ 93% 137/147 2m29s remaining] or [ 93% 137/147]
+                    # Don't require ] immediately after numbers - allow optional time remaining
+                    match = re.search(r'\[\s*(\d+)%\s+(\d+)/(\d+)', line)
                     if match:
                         percent, current, total = match.groups()
                         return f"[{percent}% {current}/{total}]"
@@ -434,16 +435,13 @@ class BuildOrchestrator:
         if result.returncode != 0:
             raise RuntimeError(f"Failed to initialize repository: {result.stderr}")
 
-        # Sync sources
+        # Sync sources (use tee to show output and log it)
         print_status(f"Syncing sources with {SYNC_JOBS} jobs (this may take a while)...")
-        with open(log_file, 'w') as f:
-            result = subprocess.run(
-                ["repo", "sync", "-c", "--force-sync", "--optimized-fetch",
-                 "--no-tags", "--no-clone-bundle", "--prune", f"-j{SYNC_JOBS}"],
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                cwd=self.build_dir
-            )
+        sync_cmd = f"repo sync -c --force-sync --optimized-fetch --no-tags --no-clone-bundle --prune -j{SYNC_JOBS} 2>&1 | tee {log_file}"
+        result = subprocess.run(
+            ["bash", "-c", sync_cmd],
+            cwd=self.build_dir
+        )
         if result.returncode != 0:
             raise RuntimeError("Failed to sync sources")
 
@@ -480,12 +478,10 @@ class BuildOrchestrator:
             print_status(f"[{current}/{total}] Cloning {repo_name} to {path}...")
 
             result = subprocess.run(
-                ["git", "clone", "-b", branch, url, str(target_path)],
-                capture_output=True,
-                text=True
+                ["git", "clone", "-b", branch, url, str(target_path)]
             )
             if result.returncode != 0:
-                raise RuntimeError(f"Failed to clone {repo_name}: {result.stderr}")
+                raise RuntimeError(f"Failed to clone {repo_name}")
 
         print_success(f"Successfully cloned {total} repositories")
 
@@ -513,23 +509,20 @@ class BuildOrchestrator:
         print_status(f"Starting build with {cores} parallel jobs...")
         print_status("Building ROM (this will take several hours)...")
 
-        # Run build in bash with sourcing
+        # Run build in bash with sourcing (use tee to show output and log it)
         build_script = f"""
 set -e
 cd {self.build_dir}
 source build/envsetup.sh
 lunch {lunch_target}
 {'make installclean' if clean else ''}
-mka pixelos -j{cores}
+mka pixelos -j{cores} 2>&1 | tee {log_file}
 """
 
-        with open(log_file, 'w') as f:
-            result = subprocess.run(
-                ["bash", "-c", build_script],
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                env=env
-            )
+        result = subprocess.run(
+            ["bash", "-c", build_script],
+            env=env
+        )
 
         if result.returncode != 0:
             raise RuntimeError("ROM build failed!")
