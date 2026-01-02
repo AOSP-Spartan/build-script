@@ -350,7 +350,7 @@ class BuildOrchestrator:
             self.notifier.orchestrator = self
 
     def run(self, skip_sync: bool, skip_clone: bool, skip_upload: bool,
-            clean: bool, clean_repos: bool):
+            installclean: bool, clean: bool, clean_repos: bool):
         """Main build pipeline"""
         try:
             # Check requirements
@@ -398,7 +398,7 @@ class BuildOrchestrator:
             self.current_log_file = log_build
             monitor = ProgressMonitor(log_build, self.notifier, "Compiling")
             monitor.start()
-            self._build_rom(log_build, clean)
+            self._build_rom(log_build, installclean, clean)
             monitor.stop()
             self._notify("Compiling", "✅ Complete")
 
@@ -626,7 +626,7 @@ class BuildOrchestrator:
 
         print_success(f"Successfully cloned {total} repositories")
 
-    def _build_rom(self, log_file: Path, clean: bool):
+    def _build_rom(self, log_file: Path, installclean: bool, clean: bool):
         """Build ROM with mka"""
         os.chdir(self.build_dir)
 
@@ -645,6 +645,15 @@ class BuildOrchestrator:
         print_status("Sourcing build environment...")
         print_status(f"Running lunch {lunch_target}...")
 
+        # Determine clean command
+        clean_cmd = ""
+        if clean:
+            clean_cmd = "make clean"
+            print_status("Running make clean (full clean)...")
+        elif installclean:
+            clean_cmd = "make installclean"
+            print_status("Running make installclean...")
+
         # Build command
         cores = os.cpu_count() or 8
         print_status(f"Starting build with {cores} parallel jobs...")
@@ -656,7 +665,7 @@ set -e
 cd {self.build_dir}
 source build/envsetup.sh
 lunch {lunch_target}
-{'make installclean' if clean else ''}
+{clean_cmd}
 mka pixelos -j{cores} 2>&1 | tee {log_file}
 """
 
@@ -812,14 +821,22 @@ def main():
                        help="Skip device repo cloning")
     parser.add_argument("--skip-upload", action="store_true",
                        help="Skip GoFile upload")
+    parser.add_argument("--installclean", action="store_true",
+                       help="Clean installed files (make installclean)")
     parser.add_argument("--clean", action="store_true",
-                       help="Clean build (make installclean)")
+                       help="Full clean build (make clean)")
     parser.add_argument("--clean-repos", action="store_true",
                        help="Clean device repos before cloning")
     parser.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD_DIR,
                        help=f"Build directory (default: {DEFAULT_BUILD_DIR})")
 
     args = parser.parse_args()
+
+    # Validate arguments
+    if args.installclean and args.clean:
+        print_error("Cannot use both --installclean and --clean together")
+        print_error("Use --installclean for incremental rebuild or --clean for full clean")
+        sys.exit(1)
 
     # Display header
     print(f"{Colors.BLUE}================================{Colors.NC}")
@@ -846,6 +863,8 @@ def main():
     print(f"  Skip Sync: {args.skip_sync}")
     print(f"  Skip Clone: {args.skip_clone}")
     print(f"  Skip Upload: {args.skip_upload}")
+    print(f"  Install Clean: {args.installclean}")
+    print(f"  Full Clean: {args.clean}")
     print()
 
     # Get Telegram credentials
@@ -872,6 +891,7 @@ def main():
         skip_sync=args.skip_sync,
         skip_clone=args.skip_clone,
         skip_upload=args.skip_upload,
+        installclean=args.installclean,
         clean=args.clean,
         clean_repos=args.clean_repos
     )
